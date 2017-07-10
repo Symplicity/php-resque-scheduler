@@ -10,7 +10,47 @@
 class ResqueScheduler
 {
 	const VERSION = "0.1";
-	
+
+	public static $redis = null;
+
+	/**
+	 * @var mixed Host/port conbination separated by a colon, or a nested
+	 * array of server swith host/port pairs
+	 */
+	protected static $redisServer = null;
+
+	/**
+	 * @var int ID of Redis database to select.
+	 */
+	protected static $redisDatabase = 0;
+
+	public static function setBackend($server, $database = 0)
+	{
+		self::$redisServer   = $server;
+		self::$redisDatabase = $database;
+		self::$redis         = null;
+	}
+
+	/**
+	 * Return an instance of the Resque_Redis class instantiated for Resque.
+	 *
+	 * @return Resque_Redis Instance of Resque_Redis.
+	 */
+	public static function redis()
+	{
+		if (self::$redis !== null) {
+			return self::$redis;
+		}
+
+		$server = self::$redisServer;
+		if (empty($server)) {
+			$server = 'localhost:6379';
+		}
+
+		self::$redis = new Resque_Redis($server, self::$redisDatabase);
+		return self::$redis;
+	}
+
 	/**
 	 * Enqueue a job in a given number of seconds from now.
 	 *
