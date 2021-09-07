@@ -11,45 +11,44 @@ class ResqueScheduler
 {
 	const VERSION = "0.1";
 
-	public static $redis = null;
+    public static $redis = null;
+    /**
+     * @var mixed Host/port conbination separated by a colon, or a nested
+     * array of server swith host/port pairs
+     */
+    protected static $redisServer = null;
 
-	/**
-	 * @var mixed Host/port conbination separated by a colon, or a nested
-	 * array of server swith host/port pairs
-	 */
-	protected static $redisServer = null;
+    /**
+     * @var int ID of Redis database to select.
+     */
+    protected static $redisDatabase = 0;
 
-	/**
-	 * @var int ID of Redis database to select.
-	 */
-	protected static $redisDatabase = 0;
+    public static function setBackend($server, $database = 0)
+    {
+        self::$redisServer   = $server;
+        self::$redisDatabase = $database;
+        self::$redis         = null;
+    }
 
-	public static function setBackend($server, $database = 0)
-	{
-		self::$redisServer   = $server;
-		self::$redisDatabase = $database;
-		self::$redis         = null;
-	}
+    /**
+     * Return an instance of the Resque_Redis class instantiated for Resque.
+     *
+     * @return Resque_Redis Instance of Resque_Redis.
+     */
+    public static function redis()
+    {
+        if (self::$redis !== null) {
+            return self::$redis;
+        }
 
-	/**
-	 * Return an instance of the Resque_Redis class instantiated for Resque.
-	 *
-	 * @return Resque_Redis Instance of Resque_Redis.
-	 */
-	public static function redis()
-	{
-		if (self::$redis !== null) {
-			return self::$redis;
-		}
+        $server = self::$redisServer;
+        if (empty($server)) {
+            $server = 'localhost:6379';
+        }
 
-		$server = self::$redisServer;
-		if (empty($server)) {
-			$server = 'localhost:6379';
-		}
-
-		self::$redis = new Resque_Redis($server, self::$redisDatabase);
-		return self::$redis;
-	}
+        self::$redis = new Resque_Redis($server, self::$redisDatabase);
+        return self::$redis;
+    }
 
 	/**
 	 * Enqueue a job in a given number of seconds from now.
@@ -103,9 +102,8 @@ class ResqueScheduler
 	public static function delayedPush($timestamp, $item)
 	{
 		$timestamp = self::getTimestamp($timestamp);
-		$redis = Resque::redis();
+		$redis = self::redis();
 		$redis->rpush('delayed:' . $timestamp, json_encode($item));
-
 		$redis->zadd('delayed_queue_schedule', $timestamp, $timestamp);
 	}
 
@@ -116,7 +114,7 @@ class ResqueScheduler
 	 */
 	public static function getDelayedQueueScheduleSize()
 	{
-		return (int)Resque::redis()->zcard('delayed_queue_schedule');
+		return (int)self::redis()->zcard('delayed_queue_schedule');
 	}
 
 	/**
@@ -128,7 +126,7 @@ class ResqueScheduler
 	public static function getDelayedTimestampSize($timestamp)
 	{
 		$timestamp = self::toTimestamp($timestamp);
-		return Resque::redis()->llen('delayed:' . $timestamp, $timestamp);
+		return self::redis()->llen('delayed:' . $timestamp, $timestamp);
 	}
 
     /**
@@ -149,8 +147,8 @@ class ResqueScheduler
     public static function removeDelayed($queue, $class, $args)
     {
        $destroyed=0;
-       $item=json_encode(self::jobToHash($queue, $class, $args));
-       $redis=Resque::redis();
+       $item = json_encode(self::jobToHash($queue, $class, $args));
+       $redis = self::redis();
 
        foreach($redis->keys('delayed:*') as $key)
        {
@@ -178,7 +176,7 @@ class ResqueScheduler
     {
         $key = 'delayed:' . self::getTimestamp($timestamp);
         $item = json_encode(self::jobToHash($queue, $class, $args));
-        $redis = Resque::redis();
+        $redis = self::redis();
         $count = $redis->lrem($key, 0, $item);
         self::cleanupTimestamp($key, $timestamp);
 
@@ -214,7 +212,7 @@ class ResqueScheduler
 	private static function cleanupTimestamp($key, $timestamp)
 	{
 		$timestamp = self::getTimestamp($timestamp);
-		$redis = Resque::redis();
+		$redis = self::redis();
 
 		if ($redis->llen($key) == 0) {
 			$redis->del($key);
@@ -265,7 +263,7 @@ class ResqueScheduler
 			$at = self::getTimestamp($at);
 		}
 	
-		$items = Resque::redis()->zrangebyscore('delayed_queue_schedule', '-inf', $at, array('limit' => array(0, 1)));
+		$items = self::redis()->zrangebyscore('delayed_queue_schedule', '-inf', $at, array('limit' => array(0, 1)));
 		if (!empty($items)) {
 			return $items[0];
 		}
@@ -284,7 +282,7 @@ class ResqueScheduler
 		$timestamp = self::getTimestamp($timestamp);
 		$key = 'delayed:' . $timestamp;
 		
-		$item = json_decode(Resque::redis()->lpop($key), true);
+		$item = json_decode(self::redis()->lpop($key), true);
 		
 		self::cleanupTimestamp($key, $timestamp);
 		return $item;
